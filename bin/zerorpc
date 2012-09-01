@@ -31,6 +31,7 @@ import inspect
 import os
 import random
 import gevent
+import traceback
 from pprint import pprint
 
 import zerorpc
@@ -47,6 +48,7 @@ client_or_server.add_argument('--client', action='store_true', default=True,
 client_or_server.add_argument('--server', action='store_false', dest='client',
         help='turn a given python module into a server')
 
+parser.add_argument('--debug', default=False, action='store_true')
 parser.add_argument('--connect', action='append', metavar='address',
                     help='specify address to connect to. Can be specified \
                     multiple times and in conjunction with --bind')
@@ -164,6 +166,7 @@ def zerorpc_inspect(client, method=None, long_doc=True, include_argspec=True):
     longest_name_len = max(len(name) for name, doc in r)
     return (longest_name_len, r)
 
+
 def context_shell(client):
     try:
         # We want to avoid making zerorpc dependent upon gevent_subprocess until
@@ -270,10 +273,30 @@ def context_shell(client):
         except OSError:
             pass
 
+
+def run_repl(args, client):
+    while True:
+        try:
+            line = raw_input('{0}> '.format(args.address))
+        except EOFError:
+            break
+        except KeyboardInterrupt:
+            break
+        try:
+            result = client._zerorpc_debug(line)
+            if result:
+                print repr(result['result'])
+        except:
+            traceback.print_exc()
+    
+
 def run_client(args):
     client = zerorpc.Client(timeout=args.timeout, heartbeat=args.heartbeat,
             passive_heartbeat=not args.active_hb)
     setup_links(args, client)
+    if args.debug and not args.command:
+        run_repl(args, client)
+        return        
     if not args.command:
         (longest_name_len, detailled_methods) = zerorpc_inspect(client,
                 long_doc=False, include_argspec=args.inspect)

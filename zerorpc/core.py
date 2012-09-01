@@ -38,7 +38,7 @@ from .channel import ChannelMultiplexer, BufferedChannel
 from .socket import SocketBase
 from .heartbeat import HeartBeatOnChannel
 from .context import Context
-from .decorators import DecoratorBase, rep
+from .decorators import DecoratorBase, rep, context
 import patterns
 
 class ServerBase(object):
@@ -96,21 +96,24 @@ class ServerBase(object):
                 for (m, f) in methods.items()]
         return {'name': self._name,
                 'methods': detailled_methods}
-
-    def _zerorpc_debug(self, action, s, debug_call_name=None):
-        if debug_call_name is None:
-            debug_context = self._default_debug_context
+    
+    def _get_context_for_name(self, name):
+        if name is None:
+            return self._default_debug_context
         else:
-            debug_context = self._methods[debug_call_name]._debug_context
-        if action == 'eval':
-            return eval(s, debug_context)
-        if action == 'exec':
-            exec s in debug_context
-            return
-        if action == 'pickle':
-            return pickle.dumps(eval(s, debug_context))
-        raise NotImplemented('Debug action {0} is not implemented.'
-                             .format(action))
+            return self._methods[debug_call_name]._debug_context
+
+    def _zerorpc_debug(self, statement_or_expression, debug_call_name=None):
+        debug_context = self._get_context_for_name(debug_call_name)
+        try:
+            return dict(result=eval(statement_or_expression, debug_context))
+        except SyntaxError:
+            exec statement_or_expression in debug_context
+
+    @context
+    def _zerorpc_context(self, object_name, debug_call_name=None):
+        debug_context = self._get_context_for_name(debug_call_name)
+        yield debug_context[object_name]
 
     def _inject_builtins(self):
         self._methods['_zerorpc_list'] = lambda: [m for m in self._methods
@@ -122,6 +125,7 @@ class ServerBase(object):
             lambda m: self._methods[m]._zerorpc_args()
         self._methods['_zerorpc_inspect'] = self._zerorpc_inspect
         self._methods['_zerorpc_debug'] = self._zerorpc_debug
+        self._methods['_zerorpc_context'] = self._zerorpc_context
 
     def __call__(self, method, *args):
         if method not in self._methods:
